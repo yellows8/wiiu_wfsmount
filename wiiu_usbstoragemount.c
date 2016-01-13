@@ -273,9 +273,6 @@ int usb_read(const char *path, char *buf, size_t size, off_t offset, struct fuse
 	if(tmpbuf==NULL)return -ENOMEM;
 	memset(tmpbuf, 0, block_size);
 
-printf("memcpy: out=%p, src=%p, size=%x, data_start=%x, tmpbuf=%p, block_size=%x\n", buf, &tmpbuf[data_start], (unsigned int)size, (unsigned int)data_start, tmpbuf, (unsigned int)block_size);
-
-
 	if(fseeko(fimage, image_baseoffset + block_start, SEEK_SET)==-1)
 	{
 		free(tmpbuf);
