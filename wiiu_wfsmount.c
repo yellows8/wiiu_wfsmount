@@ -182,6 +182,7 @@ int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 		filler(buf, ".", NULL, 0);
 		filler(buf, "..", NULL, 0);
 		filler(buf, "image.plain", NULL, 0);
+		filler(buf, "image_stream.plain", NULL, 0);
 	}
 	else
 	{
@@ -213,7 +214,7 @@ int wfs_getattr(const char *path, struct stat *stbuf)
 		stbuf->st_mode = S_IFREG | 0444;
 	}
 
-	if(strcmp(path, "/image.plain") == 0)
+	if(strcmp(path, "/image.plain") == 0 || strcmp(path, "/image_stream.plain") == 0)
 	{
 		stbuf->st_nlink = 1;
 		stbuf->st_size = image_size;
@@ -230,7 +231,7 @@ int wfs_open(const char *path, struct fuse_file_info *fi)
 {
 	int partindex;
 
-	if(strcmp(path, "/image.plain") == 0)return 0;
+	if(strcmp(path, "/image.plain") == 0 || strcmp(path, "/image_stream.plain") == 0)return 0;
 
 	return -ENOENT;
 }
@@ -244,16 +245,20 @@ int wfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse
 {
 	unsigned char *tmpbuf;
 	size_t transize, tmpsize, chunksize;
-	size_t block_size, block_start;
+	size_t block_size, block_start, iv_offset;
 	unsigned int data_start, pos;
 	int i;
+	int fileid = -1;
 
 	unsigned char iv[0x10];
 
+	memset(iv, 0, sizeof(iv));
 	memset(buf, 0, size);
 
-	if(strcmp(path, "/image.plain")==0)
+	if(strcmp(path, "/image.plain") == 0 || strcmp(path, "/image_stream.plain") == 0)
 	{
+		if(strcmp(path, "/image.plain") == 0)fileid = 0;
+		if(strcmp(path, "/image_stream.plain") == 0)fileid = 1;
 		if(offset+size > image_size || offset > image_size)return -EINVAL;
 	}
 	else
@@ -267,6 +272,19 @@ int wfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse
 	block_size = (block_size + (storage_blocksize-1)) & ~(storage_blocksize-1);
 
 	if(block_start+block_size > image_size)return -EINVAL;
+
+	if(fileid==1)
+	{
+		iv_offset = block_start;
+		if(iv_offset >= 0x10)iv_offset-= 0x10;
+		iv_offset+= image_baseoffset;
+
+		if(fseeko(fimage, iv_offset, SEEK_SET)==-1)return -EIO;
+
+		transize = fread(iv, 1, sizeof(iv), fimage);
+		if(transize!=sizeof(iv))return -EIO;
+	}
+
 
 	tmpbuf = (char*)malloc(block_size);
 	if(tmpbuf==NULL)return -ENOMEM;
@@ -287,7 +305,7 @@ int wfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse
 
 	for(pos=0; pos<block_size; pos+= storage_blocksize)
 	{
-		memset(iv, 0, 0x10);
+		if(fileid==0)memset(iv, 0, sizeof(iv));
 		AES_cbc_encrypt(&tmpbuf[pos], &tmpbuf[pos], storage_blocksize, &image_aeskey_dec, iv, AES_DECRYPT);
 	}
 
