@@ -9,20 +9,20 @@
 
 #include <openssl/aes.h>
 
-int usb_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi);
-int usb_getattr(const char *path, struct stat *stbuf);
-int usb_open(const char *path, struct fuse_file_info *fi);
-int usb_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi);
-int usb_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi);
-int usb_truncate(const char *path, off_t size);
+int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi);
+int wfs_getattr(const char *path, struct stat *stbuf);
+int wfs_open(const char *path, struct fuse_file_info *fi);
+int wfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi);
+int wfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi);
+int wfs_truncate(const char *path, off_t size);
 
-static struct fuse_operations usb_operations = {
-	.getattr = usb_getattr,
-	.readdir = usb_readdir,
-	.open    = usb_open,
-	.read    = usb_read,
-	.write   = usb_write,
-	.truncate = usb_truncate
+static struct fuse_operations wfs_operations = {
+	.getattr = wfs_getattr,
+	.readdir = wfs_readdir,
+	.open    = wfs_open,
+	.read    = wfs_read,
+	.write   = wfs_write,
+	.truncate = wfs_truncate
 };
 
 FILE *fimage;
@@ -44,15 +44,15 @@ int main(int argc, char *argv[])
 	char **fargv;
 	size_t tmpsize;
 	FILE *fkey;
-	unsigned char usbkey[0x10];
+	unsigned char key[0x10];
 	struct stat filestat;
 
 	if(argc<4)
 	{
-		printf("wiiu_usbstoragemount by yellows8\n");
-		printf("FUSE tool for accessing a mounted plaintext image for Wii U USB-storage.\n");
+		printf("wiiu_wfsmount by yellows8\n");
+		printf("FUSE tool for accessing a mounted plaintext image for Wii U wfs(usb/mlc).\n");
 		printf("Usage:\n");
-		printf("wiiu_usbstoragemount <imagepath> <filepath for the AES key> <mount-point + FUSE options>\n");
+		printf("wiiu_wfsmount <imagepath> <filepath for the AES key> <mount-point + FUSE options>\n");
 		printf("--imgsize=0x<size> Use the specified size for the image size instead of loading it with stat.\n");
 		printf("--imgoff=0x<offset> Set the base offset(default is zero) of the actual image within the specified file/device. If stat() is sucessfully used for getting the imagesize, the imagesize is subtracted by this imgoff.\n");
 		return 0;
@@ -142,8 +142,8 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	memset(usbkey, 0, 0x10);
-	tmpsize = fread(usbkey, 1, 0x10, fkey);
+	memset(key, 0, 0x10);
+	tmpsize = fread(key, 1, 0x10, fkey);
 	fclose(fkey);
 
 	if(tmpsize!=0x10)
@@ -153,26 +153,26 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	if (AES_set_decrypt_key(usbkey, 128, &image_aeskey_dec) < 0)
+	if (AES_set_decrypt_key(key, 128, &image_aeskey_dec) < 0)
     	{
         	printf("Failed to set AES decryption key.\n");
 		free(fargv);
        	 	return 2;
     	}
 
-	if (AES_set_encrypt_key(usbkey, 128, &image_aeskey_enc) < 0)
+	if (AES_set_encrypt_key(key, 128, &image_aeskey_enc) < 0)
     	{
         	printf("Failed to set AES encryption key.\n");
 		free(fargv);
        	 	return 2;
     	}
 
-	memset(usbkey, 0, 0x10);
+	memset(key, 0, 0x10);
 
-	return fuse_main(fargc, fargv, &usb_operations);
+	return fuse_main(fargc, fargv, &wfs_operations);
 }
 
-int usb_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi)
+int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi)
 {
 	int partindex;
 	char filename[32];
@@ -191,7 +191,7 @@ int usb_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 	return 0;
 }
 
-int usb_getattr(const char *path, struct stat *stbuf)
+int wfs_getattr(const char *path, struct stat *stbuf)
 {
 	int partindex;
 
@@ -226,7 +226,7 @@ int usb_getattr(const char *path, struct stat *stbuf)
 	return 0;
 }
 
-int usb_open(const char *path, struct fuse_file_info *fi)
+int wfs_open(const char *path, struct fuse_file_info *fi)
 {
 	int partindex;
 
@@ -235,12 +235,12 @@ int usb_open(const char *path, struct fuse_file_info *fi)
 	return -ENOENT;
 }
 
-int usb_truncate(const char *path, off_t size)
+int wfs_truncate(const char *path, off_t size)
 {
-	return usb_open(path, NULL);
+	return wfs_open(path, NULL);
 }
 
-int usb_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
+int wfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
 	unsigned char *tmpbuf;
 	size_t transize, tmpsize, chunksize;
@@ -251,7 +251,6 @@ int usb_read(const char *path, char *buf, size_t size, off_t offset, struct fuse
 	unsigned char iv[0x10];
 
 	memset(buf, 0, size);
-	memset(iv, 0, 0x10);
 
 	if(strcmp(path, "/image.plain")==0)
 	{
@@ -288,6 +287,7 @@ int usb_read(const char *path, char *buf, size_t size, off_t offset, struct fuse
 
 	for(pos=0; pos<block_size; pos+= storage_blocksize)
 	{
+		memset(iv, 0, 0x10);
 		AES_cbc_encrypt(&tmpbuf[pos], &tmpbuf[pos], storage_blocksize, &image_aeskey_dec, iv, AES_DECRYPT);
 	}
 
@@ -298,7 +298,7 @@ int usb_read(const char *path, char *buf, size_t size, off_t offset, struct fuse
 	return size;
 }
 
-int usb_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
+int wfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
 	char *tmpbuf;
 	size_t transize, tmpsize = size, chunksize, pos=0;
